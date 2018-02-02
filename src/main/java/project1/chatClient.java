@@ -5,12 +5,11 @@ import org.apache.zookeeper.*;
 import org.apache.zookeeper.data.Stat;
 
 import java.io.*;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.net.UnknownHostException;
+import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -39,7 +38,7 @@ public class chatClient {
     final ReentrantReadWriteLock rwl = new ReentrantReadWriteLock();
     final ExecutorService threads = Executors.newFixedThreadPool(4);
 
-    private Map userMap = new HashMap();
+    private Map<String, ArrayList<String>> userMap = new HashMap();
 
     /**
      * Main function load hotelData and reviews, Then call startServer.
@@ -51,13 +50,65 @@ public class chatClient {
         chatClient client = new chatClient();
         ZooKeeper zk = client.connectZooKeeper();
         client.receiveMessage();
-        client.userInput();
+        client.userInput(zk);
     }
 
-    public void userInput() {
+    public void userInput(ZooKeeper zk) {
+
+
         while (!isShutdown) {
+            boolean ifPrint = false;
+            listZooKeeperMember(zk, userMap, ifPrint);
+
+            Scanner reader = new Scanner(System.in);
+            System.out.println("Enter your choices (Enter HELP for help): ");
+            String userChoice = reader.nextLine();
+            String[] splitedUserChoice = userChoice.split(" ");
+            ;
+
+            switch (splitedUserChoice[0]) {
+                case "HELP":
+                    System.out.println("\nsend $name \n$message");
+                    System.out.println("\nbcast $message");
+                    System.out.println("\nlist");
+                    System.out.println("\nhistory");
+                    break;
+
+                case "send":
+                    if (!splitedUserChoice[1].isEmpty()) {
+                        String name = splitedUserChoice[1];
+                        System.out.println("Enter your message: ");
+                        String message = reader.nextLine();
+                        threads.submit(new SendMessageWorker(name, message));
+                    } else {
+                        System.out.println("Wrong data format");
+                    }
+                    break;
+
+                case "bcast":
+                    boolean isBcast = true;
+                    System.out.println("Enter your message: ");
+                    String message = reader.nextLine();
+                    threads.submit(new SendMessageWorker(message, isBcast));
+                    break;
+
+                case "list":
+                    ifPrint = true;
+                    listZooKeeperMember(zk, userMap, ifPrint);
+                    break;
+
+                case "history":
+                    break;
+
+
+            }
+
+            reader.close();
+
 
         }
+
+
     }
 
     /**
@@ -121,13 +172,14 @@ public class chatClient {
      *
      * @return
      */
-    private void listZooKeeperMember(ZooKeeper zk, HashMap userMap) {
-
+    private void listZooKeeperMember(ZooKeeper zk, Map<String, ArrayList<String>> userMap, boolean ifPrint) {
         rwl.writeLock().lock();
+
         try {
             List<String> children = zk.getChildren(group, false);
             for (String child : children) {
-                System.out.println(child);
+                if (ifPrint)
+                    System.out.println(child);
 
                 //get data about each child
                 Stat s = new Stat();
@@ -137,7 +189,7 @@ public class chatClient {
                     String ip = data.getIp();
                     String port = data.getPort();
 
-                    ArrayList userData = new ArrayList();
+                    ArrayList<String> userData = new ArrayList();
                     userData.add(ip);
                     userData.add(port);
                     System.out.print("IP: " + ip + "\tPort: " + port);
@@ -154,11 +206,9 @@ public class chatClient {
             System.out.println(e);
         } catch (InterruptedException e) {
             System.out.println(e);
-        } finally {
-            rwl.writeLock().unlock();
         }
 
-
+        rwl.writeLock().unlock();
     }
 
     /**
@@ -185,6 +235,58 @@ public class chatClient {
             e.printStackTrace();
         }
 
+
+    }
+
+    private class SendMessageWorker implements Runnable {
+        private Socket connectionSocket = new Socket();
+        final static String EOT = "EOT";
+        private String name = null;
+        private String message= null;
+        private boolean isBcast = false;
+        private ArrayList<String> userData = new ArrayList();
+        private String sip;
+        private String sport;
+
+        private SendMessageWorker(String name, String message) {
+                this.message = message;
+                this.name = name;
+        }
+
+        private SendMessageWorker(String message, boolean isBcast) {
+            this.message = message;
+            this.isBcast = isBcast;
+        }
+
+        @Override
+        public void run() {
+            System.out.println("Your message is: " + message);
+            try {
+                //get ip and port from user map
+                userData = userMap.get(name);
+                sip = userData.get(0);
+                sport = userData.get(1);
+                InetAddress ip = InetAddress.getByName(sip);
+                int port = Integer.parseInt(sport);
+                //Create connection
+                connectionSocket = new Socket(ip, port);
+
+                Chat sendMessage = Chat.newBuilder().setMessage(message).setFrom(name).setIsBcast(isBcast).build();
+                OutputStream outstream = connectionSocket.getOutputStream();
+                sendMessage.writeDelimitedTo(outstream);
+
+                InputStream instream = connectionSocket.getInputStream();
+                Reply replyMessage = Reply.getDefaultInstance();
+                replyMessage = replyMessage.parseDelimitedFrom(instream);
+                System.out.println(replyMessage.getStatus() + "\t");
+                System.out.println(replyMessage.getMessage());
+
+
+            } catch (IOException e) {
+                System.out.println(e);
+
+            }
+        }
 
     }
 
