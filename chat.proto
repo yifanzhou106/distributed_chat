@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+option java_package = "project1";
+option java_outer_classname = "ChatProto";
+
+message ZKData {
+    string ip = 1;
+    string port = 2;
+}
+
+message Chat {
+    string from = 1;
+    string message = 2;
+    bool is_bcast = 3;
+}
+
+message Reply {
+    int32 status = 1;
+    string message = 2;
+}
