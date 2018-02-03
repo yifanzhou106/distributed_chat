@@ -32,7 +32,7 @@ public class chatClient {
     public static final int ZpPORT = 9000;
     public static final String ZpHOST = "localhost";
 
-    public static final String group = "/zkdemo";
+    public static final String group = "/CS682_Chat";
     public static final String member = "/yifanzhou";
 
     final ReentrantReadWriteLock rwl = new ReentrantReadWriteLock();
@@ -48,64 +48,98 @@ public class chatClient {
      */
     public static void main(String[] args) throws Exception {
         chatClient client = new chatClient();
-        ZooKeeper zk = client.connectZooKeeper();
-        client.receiveMessage();
-        client.userInput(zk);
+        client.beginChat();
+
     }
 
-    public void userInput(ZooKeeper zk) {
+    /**
+     * create a welcoming socket
+     * Code from 601
+     */
+    public void beginChat() {
 
 
-        while (!isShutdown) {
-            boolean ifPrint = false;
-            listZooKeeperMember(zk, userMap, ifPrint);
+        try {
+            ServerSocket welcomingSocket = new ServerSocket(PORT);
+         //   System.out.println("Waiting for clients to connect...");
+            while (!isShutdown) {
+                ZooKeeper zk = connectZooKeeper(); //Create zookeeper instance
+                threads.submit(new userInput(zk)); //Create UI thread
+                Socket clientSocket = welcomingSocket.accept();
+                threads.submit(new Worker(clientSocket));
+            }
+            if (isShutdown) {
+                welcomingSocket.close();
+            }
+        } catch (IOException e) {
+            System.err.println("Unable to process client request");
+            e.printStackTrace();
+        }
 
-            Scanner reader = new Scanner(System.in);
-            System.out.println("Enter your choices (Enter HELP for help): ");
-            String userChoice = reader.nextLine();
-            String[] splitedUserChoice = userChoice.split(" ");
-            ;
 
-            switch (splitedUserChoice[0]) {
-                case "HELP":
-                    System.out.println("\nsend $name \n$message");
-                    System.out.println("\nbcast $message");
-                    System.out.println("\nlist");
-                    System.out.println("\nhistory");
-                    break;
+    }
 
-                case "send":
-                    if (!splitedUserChoice[1].isEmpty()) {
-                        String name = splitedUserChoice[1];
+
+    public class userInput implements Runnable {
+        ZooKeeper zk;
+        private userInput (ZooKeeper zk)
+        {
+            this.zk=zk;
+        }
+
+        @Override
+        public void run() {
+            while (!isShutdown) {
+                boolean ifPrint = false;
+                listZooKeeperMember(zk, userMap, ifPrint);
+
+                Scanner reader = new Scanner(System.in);
+                System.out.println("Enter your choices (Enter \"help\" for help): ");
+                String userChoice = reader.nextLine();
+                String[] splitedUserChoice = userChoice.split(" ");
+                ;
+
+                switch (splitedUserChoice[0]) {
+                    case "help":
+                        System.out.println("\n1. send $name \n$message");
+                        System.out.println("\n2. bcast $message");
+                        System.out.println("\n3. list");
+                        System.out.println("\n4. history\n");
+                        break;
+
+                    case "send":
+                        if (!splitedUserChoice[1].isEmpty()) {
+                            String name = splitedUserChoice[1];
+                            System.out.println("Enter your message: ");
+                            String message = reader.nextLine();
+                            threads.submit(new SendMessageWorker(name, message));
+                        } else {
+                            System.out.println("Wrong data format");
+                        }
+                        break;
+
+                    case "bcast":
+                        boolean isBcast = true;
                         System.out.println("Enter your message: ");
                         String message = reader.nextLine();
-                        threads.submit(new SendMessageWorker(name, message));
-                    } else {
-                        System.out.println("Wrong data format");
-                    }
-                    break;
+                        threads.submit(new SendMessageWorker(message, isBcast));
+                        break;
 
-                case "bcast":
-                    boolean isBcast = true;
-                    System.out.println("Enter your message: ");
-                    String message = reader.nextLine();
-                    threads.submit(new SendMessageWorker(message, isBcast));
-                    break;
+                    case "list":
+                        ifPrint = true;
+                        listZooKeeperMember(zk, userMap, ifPrint);
+                        break;
 
-                case "list":
-                    ifPrint = true;
-                    listZooKeeperMember(zk, userMap, ifPrint);
-                    break;
+                    case "history":
+                        break;
 
-                case "history":
-                    break;
+
+                }
+
+                reader.close();
 
 
             }
-
-            reader.close();
-
-
         }
 
 
@@ -211,32 +245,6 @@ public class chatClient {
         rwl.writeLock().unlock();
     }
 
-    /**
-     * create a welcoming socket to
-     * listen for client connections; once a new client request comes in, then
-     * create a connection socket for this client and add a new Runnable task to the ExecutorService
-     * Code from 601
-     */
-    public void receiveMessage() {
-
-
-        try {
-            ServerSocket welcomingSocket = new ServerSocket(PORT);
-            System.out.println("Waiting for clients to connect...");
-            while (!isShutdown) {
-                Socket clientSocket = welcomingSocket.accept();
-                threads.submit(new Worker(clientSocket));
-            }
-            if (isShutdown) {
-                welcomingSocket.close();
-            }
-        } catch (IOException e) {
-            System.err.println("Unable to process client request");
-            e.printStackTrace();
-        }
-
-
-    }
 
     private class SendMessageWorker implements Runnable {
         private Socket connectionSocket = new Socket();
