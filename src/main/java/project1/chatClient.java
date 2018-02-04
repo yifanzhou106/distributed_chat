@@ -5,10 +5,7 @@ import org.apache.zookeeper.*;
 import org.apache.zookeeper.data.Stat;
 
 import java.io.*;
-import java.net.InetAddress;
-import java.net.ServerSocket;
-import java.net.Socket;
-import java.net.UnknownHostException;
+import java.net.*;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -34,6 +31,7 @@ public class chatClient {
 
     public static final String group = "/CS682_Chat";
     public static final String member = "/yifanzhou";
+    public static final String user = "yifanzhou";
 
     final ReentrantReadWriteLock rwl = new ReentrantReadWriteLock();
     final ExecutorService threads = Executors.newFixedThreadPool(4);
@@ -67,7 +65,7 @@ public class chatClient {
             threads.submit(new userInput(zk)); //Create UI thread
             while (!isShutdown) {
                 Socket clientSocket = welcomingSocket.accept();
-                threads.submit(new Worker(clientSocket));
+                threads.submit(new ReceiveMessageWorker(clientSocket));
             }
             if (isShutdown) {
                 welcomingSocket.close();
@@ -213,7 +211,7 @@ public class chatClient {
             List<String> children = zk.getChildren(group, false);
             for (String child : children) {
                 if (ifPrint)
-                    System.out.println(child+"\n");
+                    System.out.println(child + "\n");
 
                 //get data about each child
                 Stat s = new Stat();
@@ -248,13 +246,13 @@ public class chatClient {
 
     private class SendMessageWorker implements Runnable {
         private Socket connectionSocket = new Socket();
-        final static String EOT = "EOT";
         private String name = null;
         private String message = null;
         private boolean isBcast = false;
         private ArrayList<String> userData = new ArrayList();
         private String sip;
         private String sport;
+        private int timeout = 1000;
 
         private SendMessageWorker(String name, String message) {
             this.message = message;
@@ -270,25 +268,56 @@ public class chatClient {
         public void run() {
             System.out.println("Your message is: " + message);
             try {
-                //get ip and port from user map
-                userData = userMap.get(name);
-                sip = userData.get(0);
-                sport = userData.get(1);
-                InetAddress ip = InetAddress.getByName(sip);
-                int port = Integer.parseInt(sport);
-                //Create connection
-                connectionSocket = new Socket(ip, port);
+                if (!isBcast) {
+                    //get ip and port from user map
+                    userData = userMap.get(name);
+                    sip = userData.get(0);
+                    sport = userData.get(1);
+                    InetAddress ip = InetAddress.getByName(sip);
+                    int port = Integer.parseInt(sport);
+                    //Create connection
+                    connectionSocket = new Socket(ip, port);
+                    connectionSocket.setSoTimeout(timeout);
+                    Chat sendMessage = Chat.newBuilder().setMessage(message).setFrom(member).setIsBcast(isBcast).build();
+                    OutputStream outstream = connectionSocket.getOutputStream();
+                    sendMessage.writeDelimitedTo(outstream);
+                    InputStream instream = connectionSocket.getInputStream();
+                    Reply replyMessage = Reply.getDefaultInstance();
+                    replyMessage = replyMessage.parseDelimitedFrom(instream);
+                    System.out.println(replyMessage.getStatus() + "\t");
+                    System.out.println(replyMessage.getMessage());
+                } else {
+                    //System.out.println("Broad cast\n");
+                    for (Map.Entry<String, ArrayList<String>> map : userMap.entrySet()) {
+                        String name = map.getKey();
+                        ArrayList<String> userData = map.getValue();
+                        try {
+                            if (!name.equals(user)) {
+                                sip = userData.get(0);
+                                sport = userData.get(1);
+                                InetAddress ip = InetAddress.getByName(sip);
+                                int port = Integer.parseInt(sport);
+                                //Create connection
+                                //connectionSocket = new Socket(ip, port);
+                                connectionSocket = new Socket();
+                                connectionSocket.connect(new InetSocketAddress(ip, port), timeout);
+                                Chat sendMessage = Chat.newBuilder().setMessage(message).setFrom(member).setIsBcast(isBcast).build();
+                                OutputStream outstream = connectionSocket.getOutputStream();
+                                sendMessage.writeDelimitedTo(outstream);
+                                InputStream instream = connectionSocket.getInputStream();
+                                Reply replyMessage = Reply.getDefaultInstance();
+                                replyMessage = replyMessage.parseDelimitedFrom(instream);
+                                System.out.println(name + " receive message");
+                            }
 
-                Chat sendMessage = Chat.newBuilder().setMessage(message).setFrom(name).setIsBcast(isBcast).build();
-                OutputStream outstream = connectionSocket.getOutputStream();
-                sendMessage.writeDelimitedTo(outstream);
+                        } catch (SocketTimeoutException e) {
+                            // System.out.println(e);
+                        } catch (UnknownHostException e) {
+                            // System.out.println(e);
+                        }
 
-                InputStream instream = connectionSocket.getInputStream();
-                Reply replyMessage = Reply.getDefaultInstance();
-                replyMessage = replyMessage.parseDelimitedFrom(instream);
-                System.out.println(replyMessage.getStatus() + "\t");
-                System.out.println(replyMessage.getMessage());
-
+                    }
+                }
 
             } catch (IOException e) {
                 System.out.println(e);
@@ -298,28 +327,28 @@ public class chatClient {
 
     }
 
-    private class Worker implements Runnable {
+    private class ReceiveMessageWorker implements Runnable {
         private final Socket connectionSocket;
 
-        private Worker(Socket connectionSocket) {
+        private ReceiveMessageWorker(Socket connectionSocket) {
             this.connectionSocket = connectionSocket;
         }
 
         @Override
         public void run() {
-            System.out.println("A client connected.");
+            // System.out.println("A client connected.");
             try {
                 InputStream instream = connectionSocket.getInputStream();
                 Chat receiveMessage = Chat.getDefaultInstance();
                 receiveMessage = receiveMessage.parseDelimitedFrom(instream);
                 if (!receiveMessage.getIsBcast())
-                System.out.println(receiveMessage.getFrom()+" says: " + receiveMessage.getMessage());
-                else
-                {
-                    System.out.println(receiveMessage.getFrom()+" broadcast: " + receiveMessage.getMessage());
+                    System.out.println(receiveMessage.getFrom() + " says: " + receiveMessage.getMessage());
+                else {
+                    System.out.println(receiveMessage.getFrom() + " broadcast: " + receiveMessage.getMessage());
                 }
-
-
+                Reply responseMessage = Reply.newBuilder().setStatus(200).setMessage("Ok").build();
+                OutputStream outstream = connectionSocket.getOutputStream();
+                responseMessage.writeDelimitedTo(outstream);
 
 
             } catch (IOException e) {

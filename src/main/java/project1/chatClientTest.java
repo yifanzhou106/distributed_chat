@@ -278,15 +278,14 @@ public class chatClientTest {
                 //Create connection
                 connectionSocket = new Socket(ip, port);
 
-                Chat sendMessage = Chat.newBuilder().setMessage(message).setFrom(name).setIsBcast(isBcast).build();
+                Chat sendMessage = Chat.newBuilder().setMessage(message).setFrom(member).setIsBcast(isBcast).build();
                 OutputStream outstream = connectionSocket.getOutputStream();
                 sendMessage.writeDelimitedTo(outstream);
 
                 InputStream instream = connectionSocket.getInputStream();
                 Reply replyMessage = Reply.getDefaultInstance();
                 replyMessage = replyMessage.parseDelimitedFrom(instream);
-                System.out.println(replyMessage.getStatus() + "\t");
-                System.out.println(replyMessage.getMessage());
+                System.out.println(replyMessage.getStatus() + " "+replyMessage.getMessage());
 
 
             } catch (IOException e) {
@@ -318,7 +317,9 @@ public class chatClientTest {
                 {
                     System.out.println(receiveMessage.getFrom()+" broadcast: " + receiveMessage.getMessage());
                 }
-
+                Reply responseMessage = Reply.newBuilder().setStatus(200).setMessage("Ok").build();
+                OutputStream outstream = connectionSocket.getOutputStream();
+                responseMessage.writeDelimitedTo(outstream);
 
             } catch (IOException e) {
                 System.out.println(e);
