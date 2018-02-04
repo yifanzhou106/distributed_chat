@@ -24,11 +24,11 @@ import project1.ChatProto.Reply;
  * @Author Yifan Zhou
  */
 public class chatClient {
-    public static final int PORT = 7000;
+    public static final int PORT = 5610;
     static volatile boolean isShutdown = false;
 
-    public static final int ZpPORT = 9000;
-    public static final String ZpHOST = "localhost";
+    public static final int ZpPORT = 2181;
+    public static final String ZpHOST = "mc01";
 
     public static final String group = "/CS682_Chat";
     public static final String member = "/yifanzhou";
@@ -115,7 +115,7 @@ public class chatClient {
                     case "send":
                         if (!splitedUserChoice[1].isEmpty()) {
                             String name = splitedUserChoice[1];
-                            System.out.println("Enter your message: ");
+                            System.out.println("\n\nEnter your message: ");
                             String message = reader.nextLine();
                             threads.submit(new SendMessageWorker(name, message));
                         } else {
@@ -137,14 +137,18 @@ public class chatClient {
 
                     case "history":
                         rwl.readLock().lock();
-                        for (Map.Entry<String,String> map: bcastHistoryMap.entrySet())
-                        {
-                            System.out.println(map.getValue()+ "Date: "+ map.getKey());
-                        }
+                        if (bcastHistoryMap.isEmpty()) {
+                            System.out.println("\nBroadcast History is empty\n");
+                        } else
+                            for (Map.Entry<String, String> map : bcastHistoryMap.entrySet()) {
+                                System.out.println(map.getValue() + "Date: " + map.getKey());
+                            }
                         rwl.readLock().unlock();
                         break;
 
-
+                    default:
+                        System.out.println("\nWrong Input\n");
+                        break;
                 }
             }
 
@@ -192,7 +196,7 @@ public class chatClient {
      * @return
      */
     private void joinZooKeeper(ZooKeeper zk) {
-        ZKData data = ZKData.newBuilder().setIp("127.0.0.1").setPort("7000").build();
+        ZKData data = ZKData.newBuilder().setIp("mc10").setPort("5610").build();
         try {
             String createdPath = zk.create(group + member,
                     data.toByteArray(),  //probably should be something more interesting here...
@@ -324,6 +328,8 @@ public class chatClient {
                             // System.out.println(e);
                         } catch (UnknownHostException e) {
                             // System.out.println(e);
+                        } catch (ConnectException e) {
+                            //System.out.println(e);
                         }
 
                     }
@@ -351,20 +357,23 @@ public class chatClient {
                 InputStream instream = connectionSocket.getInputStream();
                 Chat receiveMessage = Chat.getDefaultInstance();
                 receiveMessage = receiveMessage.parseDelimitedFrom(instream);
-                String singleMessage =receiveMessage.getFrom() + " says: " + receiveMessage.getMessage();
-                String bcastMessage= receiveMessage.getFrom() + " broadcast: " + receiveMessage.getMessage();
+                String singleMessage = receiveMessage.getFrom() + " says: " + receiveMessage.getMessage();
+                String bcastMessage = receiveMessage.getFrom() + " broadcast: " + receiveMessage.getMessage();
+
+                SimpleDateFormat sdf = new SimpleDateFormat(format); //Code from Zk dateServer example
+                String date = sdf.format(new Date());
+
                 if (!receiveMessage.getIsBcast())
                     System.out.println(singleMessage);
                 else {
                     System.out.println(bcastMessage);
+                    rwl.writeLock().lock();
+                    bcastHistoryMap.put(date, bcastMessage);
+                    rwl.writeLock().unlock();
                 }
 
-                SimpleDateFormat sdf = new SimpleDateFormat(format); //Code from Zk dateServer example
-                String date = sdf.format(new Date());
                 System.out.println("Response date: " + date);
-                rwl.writeLock().lock();
-                bcastHistoryMap.put(date,bcastMessage);
-                rwl.writeLock().unlock();
+
                 Reply responseMessage = Reply.newBuilder().setStatus(200).setMessage("Ok").build();
                 OutputStream outstream = connectionSocket.getOutputStream();
                 responseMessage.writeDelimitedTo(outstream);
