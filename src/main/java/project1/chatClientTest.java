@@ -3,21 +3,19 @@ package project1;
 import com.google.protobuf.InvalidProtocolBufferException;
 import org.apache.zookeeper.*;
 import org.apache.zookeeper.data.Stat;
+import project1.ChatProto.Chat;
+import project1.ChatProto.Reply;
+import project1.ChatProto.ZKData;
 
 import java.io.*;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.net.UnknownHostException;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
-
-import project1.ChatProto.ZKData;
-import project1.ChatProto.Chat;
-import project1.ChatProto.Reply;
 
 
 /**
@@ -25,15 +23,15 @@ import project1.ChatProto.Reply;
  *
  * @Author Yifan Zhou
  */
-public class chatClient {
-    public static final int PORT = 7000;
+public class chatClientTest {
+    public static final int PORT = 6000;
     static volatile boolean isShutdown = false;
 
-    public static final int ZpPORT = 9000;
+    public static final int ZpPORT = 9090;
     public static final String ZpHOST = "localhost";
 
     public static final String group = "/CS682_Chat";
-    public static final String member = "/yifanzhou";
+    public static final String member = "/yifanzhoutest3";
 
     final ReentrantReadWriteLock rwl = new ReentrantReadWriteLock();
     final ExecutorService threads = Executors.newFixedThreadPool(4);
@@ -47,7 +45,7 @@ public class chatClient {
      * @throws Exception
      */
     public static void main(String[] args) throws Exception {
-        chatClient client = new chatClient();
+        chatClientTest client = new chatClientTest();
         client.beginChat();
 
     }
@@ -66,6 +64,7 @@ public class chatClient {
             joinZooKeeper(zk);
             threads.submit(new userInput(zk)); //Create UI thread
             while (!isShutdown) {
+                System.out.println("1111");
                 Socket clientSocket = welcomingSocket.accept();
                 threads.submit(new Worker(clientSocket));
             }
@@ -160,7 +159,7 @@ public class chatClient {
             zk = new ZooKeeper(ZpHOST + ":" + ZpPORT, 1000, new Watcher() {
                 @Override
                 public void process(WatchedEvent event) {
-                    if (event.getState() == Watcher.Event.KeeperState.SyncConnected) {
+                    if (event.getState() == Event.KeeperState.SyncConnected) {
                         connectedSignal.countDown();
                     }
                 }
@@ -184,7 +183,7 @@ public class chatClient {
      * @return
      */
     private void joinZooKeeper(ZooKeeper zk) {
-        ZKData data = ZKData.newBuilder().setIp("127.0.0.1").setPort("7000").build();
+        ZKData data = ZKData.newBuilder().setIp("127.0.0.1").setPort("6000").build();
         try {
             String createdPath = zk.create(group + member,
                     data.toByteArray(),  //probably should be something more interesting here...
@@ -212,8 +211,8 @@ public class chatClient {
         try {
             List<String> children = zk.getChildren(group, false);
             for (String child : children) {
-                if (ifPrint)
-                    System.out.println(child+"\n");
+
+                    System.out.println(child);
 
                 //get data about each child
                 Stat s = new Stat();
@@ -226,9 +225,9 @@ public class chatClient {
                     ArrayList<String> userData = new ArrayList();
                     userData.add(ip);
                     userData.add(port);
-                    //System.out.print("IP: " + ip + "\tPort: " + port);
+                    System.out.print("IP: " + ip + "\tPort: " + port);
                     userMap.put(child, userData);
-                    //System.out.print("\n");
+                    System.out.print("\n");
 
                 } else {
                     System.out.println("\tNO DATA");
@@ -300,6 +299,7 @@ public class chatClient {
 
     private class Worker implements Runnable {
         private final Socket connectionSocket;
+        final static String EOT = "EOT";
 
         private Worker(Socket connectionSocket) {
             this.connectionSocket = connectionSocket;
@@ -308,18 +308,16 @@ public class chatClient {
         @Override
         public void run() {
             System.out.println("A client connected.");
-            try {
+            try  {
                 InputStream instream = connectionSocket.getInputStream();
                 Chat receiveMessage = Chat.getDefaultInstance();
                 receiveMessage = receiveMessage.parseDelimitedFrom(instream);
                 if (!receiveMessage.getIsBcast())
-                System.out.println(receiveMessage.getFrom()+" says: " + receiveMessage.getMessage());
+                    System.out.println(receiveMessage.getFrom()+" says: " + receiveMessage.getMessage());
                 else
                 {
                     System.out.println(receiveMessage.getFrom()+" broadcast: " + receiveMessage.getMessage());
                 }
-
-
 
 
             } catch (IOException e) {
