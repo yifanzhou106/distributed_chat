@@ -6,6 +6,7 @@ import org.apache.zookeeper.data.Stat;
 
 import java.io.*;
 import java.net.*;
+import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -33,10 +34,13 @@ public class chatClient {
     public static final String member = "/yifanzhou";
     public static final String user = "yifanzhou";
 
+    String format = "yyyy-MM-dd HH:mm:ss";
+
     final ReentrantReadWriteLock rwl = new ReentrantReadWriteLock();
     final ExecutorService threads = Executors.newFixedThreadPool(4);
 
     private Map<String, ArrayList<String>> userMap = new HashMap();
+    private Map<String, String> bcastHistoryMap = new TreeMap<>();
 
     /**
      * Main function load hotelData and reviews, Then call startServer.
@@ -102,7 +106,7 @@ public class chatClient {
                     case "help":
                         System.out.println("\n**************************");
                         System.out.println("\n1. send $name ");
-                        System.out.println("\n2. bcast $message");
+                        System.out.println("\n2. bcast ");
                         System.out.println("\n3. list");
                         System.out.println("\n4. history\n");
                         System.out.println("\n**************************");
@@ -132,6 +136,12 @@ public class chatClient {
                         break;
 
                     case "history":
+                        rwl.readLock().lock();
+                        for (Map.Entry<String,String> map: bcastHistoryMap.entrySet())
+                        {
+                            System.out.println(map.getValue()+ "Date: "+ map.getKey());
+                        }
+                        rwl.readLock().unlock();
                         break;
 
 
@@ -341,11 +351,20 @@ public class chatClient {
                 InputStream instream = connectionSocket.getInputStream();
                 Chat receiveMessage = Chat.getDefaultInstance();
                 receiveMessage = receiveMessage.parseDelimitedFrom(instream);
+                String singleMessage =receiveMessage.getFrom() + " says: " + receiveMessage.getMessage();
+                String bcastMessage= receiveMessage.getFrom() + " broadcast: " + receiveMessage.getMessage();
                 if (!receiveMessage.getIsBcast())
-                    System.out.println(receiveMessage.getFrom() + " says: " + receiveMessage.getMessage());
+                    System.out.println(singleMessage);
                 else {
-                    System.out.println(receiveMessage.getFrom() + " broadcast: " + receiveMessage.getMessage());
+                    System.out.println(bcastMessage);
                 }
+
+                SimpleDateFormat sdf = new SimpleDateFormat(format); //Code from Zk dateServer example
+                String date = sdf.format(new Date());
+                System.out.println("Response date: " + date);
+                rwl.writeLock().lock();
+                bcastHistoryMap.put(date,bcastMessage);
+                rwl.writeLock().unlock();
                 Reply responseMessage = Reply.newBuilder().setStatus(200).setMessage("Ok").build();
                 OutputStream outstream = connectionSocket.getOutputStream();
                 responseMessage.writeDelimitedTo(outstream);
