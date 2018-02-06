@@ -141,10 +141,17 @@ public class chatClient {
                             System.out.println("\nBroadcast History is empty\n");
                         } else
                             for (Map.Entry<String, String> map : bcastHistoryMap.entrySet()) {
-                                System.out.println(map.getValue() + "Date: " + map.getKey());
+                                System.out.println(map.getValue() + "  Date: " + map.getKey());
                             }
                         rwl.readLock().unlock();
                         break;
+
+                    case "exit":
+                        isShutdown=true;
+                        threads.shutdownNow();
+                        System.exit(0);
+                        break;
+
 
                     default:
                         System.out.println("\nWrong Input\n");
@@ -298,8 +305,8 @@ public class chatClient {
                     InputStream instream = connectionSocket.getInputStream();
                     Reply replyMessage = Reply.getDefaultInstance();
                     replyMessage = replyMessage.parseDelimitedFrom(instream);
-                    System.out.println(replyMessage.getStatus() + "\t");
-                    System.out.println(replyMessage.getMessage());
+                    System.out.println(replyMessage.getStatus() + " " + replyMessage.getMessage());
+
                 } else {
                     //System.out.println("Broad cast\n");
                     for (Map.Entry<String, ArrayList<String>> map : userMap.entrySet()) {
@@ -362,7 +369,7 @@ public class chatClient {
 
                 SimpleDateFormat sdf = new SimpleDateFormat(format); //Code from Zk dateServer example
                 String date = sdf.format(new Date());
-
+                System.out.println("\n###################\n");
                 if (!receiveMessage.getIsBcast())
                     System.out.println(singleMessage);
                 else {
@@ -373,7 +380,7 @@ public class chatClient {
                 }
 
                 System.out.println("Response date: " + date);
-
+                System.out.println("\n###################\n");
                 Reply responseMessage = Reply.newBuilder().setStatus(200).setMessage("Ok").build();
                 OutputStream outstream = connectionSocket.getOutputStream();
                 responseMessage.writeDelimitedTo(outstream);
