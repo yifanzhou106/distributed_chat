@@ -59,27 +59,10 @@ public class chatClient {
      * Code from 601
      */
     public void beginChat() {
-
-
-        try {
-            ServerSocket welcomingSocket = new ServerSocket(PORT);
-            //   System.out.println("Waiting for clients to connect...");
             ZooKeeper zk = connectZooKeeper(); //Create zookeeper instance
             joinZooKeeper(zk);
             threads.submit(new userInput(zk)); //Create UI thread
-            while (!isShutdown) {
-                Socket clientSocket = welcomingSocket.accept();
-                threads.submit(new ReceiveMessageWorker(clientSocket));
-            }
-            if (isShutdown) {
-                welcomingSocket.close();
-            }
-        } catch (IOException e) {
-            System.err.println("Unable to process client request");
-            e.printStackTrace();
-        }
-
-
+            threads.submit(new ReceiveMessageWorker());
     }
 
 
@@ -147,7 +130,7 @@ public class chatClient {
                         break;
 
                     case "exit":
-                        isShutdown=true;
+                        isShutdown = true;
                         threads.shutdownNow();
                         System.exit(0);
                         break;
@@ -351,45 +334,48 @@ public class chatClient {
     }
 
     private class ReceiveMessageWorker implements Runnable {
-        private final Socket connectionSocket;
-
-        private ReceiveMessageWorker(Socket connectionSocket) {
-            this.connectionSocket = connectionSocket;
-        }
 
         @Override
         public void run() {
             // System.out.println("A client connected.");
+
             try {
-                InputStream instream = connectionSocket.getInputStream();
-                Chat receiveMessage = Chat.getDefaultInstance();
-                receiveMessage = receiveMessage.parseDelimitedFrom(instream);
-                String singleMessage = receiveMessage.getFrom() + " says: " + receiveMessage.getMessage();
-                String bcastMessage = receiveMessage.getFrom() + " broadcast: " + receiveMessage.getMessage();
+                ServerSocket welcomingSocket = new ServerSocket(PORT);
+                while (!isShutdown) {
+                    Socket connectionSocket = welcomingSocket.accept();
+                    InputStream instream = connectionSocket.getInputStream();
+                    Chat receiveMessage = Chat.getDefaultInstance();
+                    receiveMessage = receiveMessage.parseDelimitedFrom(instream);
+                    String singleMessage = receiveMessage.getFrom() + " says: " + receiveMessage.getMessage();
+                    String bcastMessage = receiveMessage.getFrom() + " broadcast: " + receiveMessage.getMessage();
 
-                SimpleDateFormat sdf = new SimpleDateFormat(format); //Code from Zk dateServer example
-                String date = sdf.format(new Date());
-                System.out.println("\n###################\n");
-                if (!receiveMessage.getIsBcast())
-                    System.out.println(singleMessage);
-                else {
-                    System.out.println(bcastMessage);
-                    rwl.writeLock().lock();
-                    bcastHistoryMap.put(date, bcastMessage);
-                    rwl.writeLock().unlock();
+                    SimpleDateFormat sdf = new SimpleDateFormat(format); //Code from Zk dateServer example
+                    String date = sdf.format(new Date());
+                    System.out.println("\n###################\n");
+                    if (!receiveMessage.getIsBcast())
+                        System.out.println(singleMessage);
+                    else {
+                        System.out.println(bcastMessage);
+                        rwl.writeLock().lock();
+                        bcastHistoryMap.put(date, bcastMessage);
+                        rwl.writeLock().unlock();
+                    }
+
+                    System.out.println("Response date: " + date);
+                    System.out.println("\n###################\n");
+                    Reply responseMessage = Reply.newBuilder().setStatus(200).setMessage("Ok").build();
+                    OutputStream outstream = connectionSocket.getOutputStream();
+                    responseMessage.writeDelimitedTo(outstream);
+
                 }
-
-                System.out.println("Response date: " + date);
-                System.out.println("\n###################\n");
-                Reply responseMessage = Reply.newBuilder().setStatus(200).setMessage("Ok").build();
-                OutputStream outstream = connectionSocket.getOutputStream();
-                responseMessage.writeDelimitedTo(outstream);
-
-
+                if (isShutdown) {
+                    welcomingSocket.close();
+                }
             } catch (IOException e) {
                 System.out.println(e);
 
             }
+
         }
 
     }
